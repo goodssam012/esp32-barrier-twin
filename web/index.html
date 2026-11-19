@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>손가락 서보 트윈</title>
+<style>
+  :root {
+    --bg: #0f1218; --panel: #181d26; --line: #2a3140; --text: #e6e9ef; --muted: #8a93a6;
+    --accent: #4f9cff; --ok: #3ccf8e; --warn: #ffb547; --err: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: "Segoe UI", "Malgun Gothic", system-ui, sans-serif; font-size: 14px; }
+  header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+           padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 17px; margin: 0 12px 0 0; }
+  button { background: var(--panel); color: var(--text); border: 1px solid var(--line);
+           padding: 7px 12px; border-radius: 6px; cursor: pointer; font: inherit; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .pill { padding: 3px 9px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line);
+          color: var(--muted); font-size: 12px; }
+  .pill.ok { color: var(--ok); border-color: var(--ok); }
+  .pill.warn { color: var(--warn); border-color: var(--warn); }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px 16px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .view { position: relative; background: #000; border: 1px solid var(--line); border-radius: 8px;
+          overflow: hidden; aspect-ratio: 4 / 3; }
+  .view .label { position: absolute; left: 8px; top: 8px; z-index: 2; font-size: 12px;
+                 background: rgba(0,0,0,.55); padding: 3px 8px; border-radius: 4px; }
+  video, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+                    transform: scaleX(-1); }
+  #three { position: absolute; inset: 0; }
+  .placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted);
+                 text-align: center; padding: 16px; }
+  .panel { margin: 0 16px 16px; background: var(--panel); border: 1px solid var(--line);
+           border-radius: 8px; padding: 12px; display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .panel { grid-template-columns: 1fr; } }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  .chip { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+  input[type=range] { width: 100%; }
+  .bar { position: relative; height: 8px; background: #0b0e13; border-radius: 4px; min-width: 90px; }
+  .bar > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .muted { color: var(--muted); }
+  #log { height: 130px; overflow: auto; background: #0b0e13; border-radius: 6px; padding: 6px 8px;
+         font-family: Consolas, monospace; font-size: 12px; color: var(--muted); white-space: pre-wrap; }
+  h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
+</style>
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<header>
+  <h1>✋ 손가락 → ESP32-S3 서보 디지털 트윈</h1>
+  <button id="btnCam" class="primary">카메라 시작</button>
+  <button id="btnSerial">ESP32 연결</button>
+  <span id="stModel" class="pill">모델 로딩 중…</span>
+  <span id="stHand" class="pill">손 없음</span>
+  <span id="stSerial" class="pill">시리얼 미연결</span>
+  <span id="stFps" class="pill">0 fps</span>
+</header>
+
+<main>
+  <div class="view">
+    <span class="label">웹 카메라 (손 관절 인식)</span>
+    <video id="video" playsinline muted></video>
+    <canvas id="overlay"></canvas>
+    <div id="camPh" class="placeholder">[카메라 시작]을 누르세요</div>
+  </div>
+  <div class="view">
+    <span class="label">가상 공간 (로봇 손 + 서보 5개) — 드래그로 회전</span>
+    <div id="three"></div>
+  </div>
+</main>
+
+<section class="panel">
+  <div>
+    <div class="row">
+      <button id="btnOpen">① 손 펴고 보정</button>
+      <button id="btnFist">② 주먹 쥐고 보정</button>
+      <button id="btnReset">보정 초기화</button>
+      <label><input type="checkbox" id="chkManual"> 수동 모드 (슬라이더로 직접 제어)</label>
+    </div>
+    <table>
+      <thead><tr><th>손가락</th><th>GPIO</th><th>굽힘(°)</th><th>보정 범위</th><th>서보 각도</th><th>반전</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div>
+    <h3>설정</h3>
+    <div class="row">
+      <span class="muted" style="width:110px">스무딩</span>
+      <input type="range" id="rngSmooth" min="0" max="0.95" step="0.05" value="0.5" style="flex:1">
+      <span id="vSmooth" style="width:36px">0.50</span>
+    </div>
+    <div class="row">
+      <span class="muted" style="width:110px">전송 주기</span>
+      <input type="range" id="rngRate" min="10" max="60" step="5" value="30" style="flex:1">
+      <span id="vRate" style="width:36px">30Hz</span>
+    </div>
+    <h3>시리얼 로그</h3>
+    <div id="log"></div>
+  </div>
+</section>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { HandLandmarker, FilesetResolver, DrawingUtils }
+  from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+
+// ===================== 손가락 정의 =====================
+// MediaPipe 손 랜드마크 번호: 0=손목, 엄지 1-4, 검지 5-8, 중지 9-12, 약지 13-16, 새끼 17-20
+const FINGERS = [
+  { name: '엄지', gpio: 4,  chain: [1, 2, 3, 4],      open: 15, closed: 95,  color: '#ff6b6b' },
+  { name: '검지', gpio: 5,  chain: [0, 5, 6, 7, 8],   open: 15, closed: 220, color: '#ffb547' },
+  { name: '중지', gpio: 6,  chain: [0, 9, 10, 11, 12], open: 15, closed: 230, color: '#3ccf8e' },
+  { name: '약지', gpio: 7,  chain: [0, 13, 14, 15, 16], open: 15, closed: 230, color: '#4f9cff' },
+  { name: '새끼', gpio: 15, chain: [0, 17, 18, 19, 20], open: 15, closed: 220, color: '#c77dff' },
+];
+const DEFAULTS = FINGERS.map(f => ({ open: f.open, closed: f.closed }));
+for (const f of FINGERS) { f.bend = 0; f.ratio = 0; f.angle = 0; f.invert = false; }
+
+// 저장된 보정값 불러오기
+try {
+  const saved = JSON.parse(localStorage.getItem('fingerCal') || 'null');
+  if (saved) saved.forEach((s, i) => Object.assign(FINGERS[i], s));
+} catch {}
+function saveCal() {
+  try { localStorage.setItem('fingerCal', JSON.stringify(
+    FINGERS.map(f => ({ open: f.open, closed: f.closed, invert: f.invert })))); } catch {}
+}
+
+// ===================== UI =====================
+const $ = id => document.getElementById(id);
+const rowsEl = $('rows');
+FINGERS.forEach((f, i) => {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><span class="chip" style="background:${f.color}"></span>${f.name}</td>
+    <td>${f.gpio}</td>
+    <td id="bend${i}">-</td>
+    <td id="cal${i}" class="muted"></td>
+    <td style="width:40%"><div style="display:flex;gap:8px;align-items:center">
+      <input type="range" id="man${i}" min="0" max="180" value="0" disabled style="flex:1">
+      <span id="ang${i}" style="width:34px;text-align:right">0°</span></div></td>
+    <td><input type="checkbox" id="inv${i}" ${f.invert ? 'checked' : ''}></td>`;
+  rowsEl.appendChild(tr);
+  $('inv' + i).onchange = e => { f.invert = e.target.checked; saveCal(); };
+  $('man' + i).oninput = e => { if (manual) f.ratio = +e.target.value / 180; };
+});
+function showCal() {
+  FINGERS.forEach((f, i) => $('cal' + i).textContent = `${f.open.toFixed(0)}° ~ ${f.closed.toFixed(0)}°`);
+}
+showCal();
+
+let manual = false;
+$('chkManual').onchange = e => {
+  manual = e.target.checked;
+  FINGERS.forEach((f, i) => $('man' + i).disabled = !manual);
+};
+
+let smooth = 0.5, sendHz = 30;
+$('rngSmooth').oninput = e => { smooth = +e.target.value; $('vSmooth').textContent = smooth.toFixed(2); };
+$('rngRate').oninput = e => { sendHz = +e.target.value; $('vRate').textContent = sendHz + 'Hz'; };
+
+$('btnOpen').onclick = () => {
+  if (!handVisible) return log('보정 실패: 손이 보이지 않습니다.');
+  FINGERS.forEach(f => f.open = f.bend);
+  fixCal(); saveCal(); showCal(); log('펼친 손 보정 완료');
+};
+$('btnFist').onclick = () => {
+  if (!handVisible) return log('보정 실패: 손이 보이지 않습니다.');
+  FINGERS.forEach(f => f.closed = f.bend);
+  fixCal(); saveCal(); showCal(); log('주먹 보정 완료');
+};
+$('btnReset').onclick = () => {
+  FINGERS.forEach((f, i) => Object.assign(f, DEFAULTS[i]));
+  saveCal(); showCal(); log('보정값을 기본값으로 초기화');
+};
+function fixCal() {   // 범위가 너무 좁으면 최소 20° 확보
+  for (const f of FINGERS) if (f.closed - f.open < 20) f.closed = f.open + 20;
+}
+
+const logEl = $('log');
+function log(msg) {
+  const t = new Date().toLocaleTimeString();
+  logEl.textContent += `[${t}] ${msg}\n`;
+  if (logEl.textContent.length > 8000) logEl.textContent = logEl.textContent.slice(-6000);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function setPill(id, text, cls) { const el = $(id); el.textContent = text; el.className = 'pill ' + (cls || ''); }
+
+// ===================== 관절 각도 계산 =====================
+function bendOf(lm, chain) {
+  // 연속한 뼈 벡터 사이의 각도를 모두 더한 값 = 손가락이 굽은 정도(도)
+  let sum = 0;
+  for (let k = 0; k < chain.length - 2; k++) {
+    const a = lm[chain[k]], b = lm[chain[k + 1]], c = lm[chain[k + 2]];
+    const v1 = [b.x - a.x, b.y - a.y, b.z - a.z];
+    const v2 = [c.x - b.x, c.y - b.y, c.z - b.z];
+    const d = v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2];
+    const n = Math.hypot(...v1) * Math.hypot(...v2) || 1;
+    sum += Math.acos(Math.min(1, Math.max(-1, d / n))) * 180 / Math.PI;
+  }
+  return sum;
+}
+
+// ===================== MediaPipe 손 인식 =====================
+const video = $('video'), overlay = $('overlay'), octx = overlay.getContext('2d');
+const draw = new DrawingUtils(octx);
+let landmarker = null, handVisible = false;
+
+async function initModel() {
+  const fileset = await FilesetResolver.forVisionTasks(
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+  const opts = (delegate) => ({
+    baseOptions: {
+      modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+      delegate },
+    runningMode: 'VIDEO', numHands: 1,
+    minHandDetectionConfidence: 0.6, minHandPresenceConfidence: 0.6, minTrackingConfidence: 0.5,
+  });
+  try { landmarker = await HandLandmarker.createFromOptions(fileset, opts('GPU')); }
+  catch { landmarker = await HandLandmarker.createFromOptions(fileset, opts('CPU')); }
+  setPill('stModel', '모델 준비됨', 'ok');
+}
+initModel().catch(e => { setPill('stModel', '모델 로딩 실패', 'warn'); log('모델 로딩 실패: ' + e.message); });
+
+$('btnCam').onclick = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+    video.srcObject = stream;
+    await video.play();
+    $('camPh').style.display = 'none';
+    $('btnCam').disabled = true;
+    log('카메라 시작');
+  } catch (e) { log('카메라 오류: ' + e.message); }
+};
+
+let lastVideoTime = -1, fpsCount = 0, fpsT = performance.now();
+function detect() {
+  if (!landmarker || video.readyState < 2 || video.currentTime === lastVideoTime) return;
+  lastVideoTime = video.currentTime;
+  const res = landmarker.detectForVideo(video, performance.now());
+
+  if (overlay.width !== video.videoWidth) { overlay.width = video.videoWidth; overlay.height = video.videoHeight; }
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+
+  handVisible = !!(res.landmarks && res.landmarks.length);
+  setPill('stHand', handVisible ? '손 인식됨' : '손 없음', handVisible ? 'ok' : '');
+  if (!handVisible) return;
+
+  const lm2d = res.landmarks[0];
+  draw.drawConnectors(lm2d, HandLandmarker.HAND_CONNECTIONS, { color: '#ffffffaa', lineWidth: 3 });
+  FINGERS.forEach(f => draw.drawLandmarks(f.chain.filter(n => n !== 0).map(n => lm2d[n]),
+                                          { color: f.color, radius: 4, lineWidth: 1 }));
+
+  // 3D 월드 좌표(미터)로 계산하면 카메라 거리/손 회전에 덜 민감합니다
+  const lm = (res.worldLandmarks && res.worldLandmarks[0]) || lm2d;
+  FINGERS.forEach((f, i) => {
+    f.bend = bendOf(lm, f.chain);
+    $('bend' + i).textContent = f.bend.toFixed(0);
+    if (!manual) {
+      const r = Math.min(1, Math.max(0, (f.bend - f.open) / (f.closed - f.open)));
+      f.ratio = smooth * f.ratio + (1 - smooth) * r;   // 지수 이동 평균
+    }
+  });
+  fpsCount++;
+}
+
+// ===================== Web Serial (ESP32-S3) =====================
+let port = null, writer = null, reader = null, pipeDone = null;
+let lastSend = 0, lastLine = '';
+
+$('btnSerial').onclick = async () => {
+  if (port) return disconnect();
+  if (!('serial' in navigator)) return log('이 브라우저는 Web Serial을 지원하지 않습니다. Chrome 또는 Edge를 사용하세요.');
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    writer = port.writable.getWriter();
+    setPill('stSerial', '시리얼 연결됨', 'ok');
+    $('btnSerial').textContent = 'ESP32 연결 해제';
+    log('ESP32 연결됨');
+    await writer.write(new TextEncoder().encode('P\n'));
+    readLoop();
+  } catch (e) { log('연결 실패: ' + e.message); port = null; }
+};
+
+async function readLoop() {
+  const dec = new TextDecoderStream();
+  pipeDone = port.readable.pipeTo(dec.writable).catch(() => {});
+  reader = dec.readable.getReader();
+  let buf = '';
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      let k;
+      while ((k = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, k).trim(); buf = buf.slice(k + 1);
+        if (line) log('ESP32 ▶ ' + line);
+      }
+    }
+  } catch (e) { log('수신 종료: ' + e.message); }
+}
+
+async function disconnect() {
+  try {
+    if (reader) { await reader.cancel().catch(() => {}); reader = null; }
+    if (pipeDone) await pipeDone;
+    if (writer) { writer.releaseLock(); writer = null; }
+    await port.close();
+  } catch (e) { log('해제 오류: ' + e.message); }
+  port = null;
+  setPill('stSerial', '시리얼 미연결');
+  $('btnSerial').textContent = 'ESP32 연결';
+  log('ESP32 연결 해제');
+}
+
+function sendAngles(now) {
+  if (!writer || now - lastSend < 1000 / sendHz) return;
+  const line = 'S,' + FINGERS.map(f => Math.round(f.angle)).join(',') + '\n';
+  if (line === lastLine && now - lastSend < 500) return;   // 변화 없으면 0.5초마다만 재전송
+  lastSend = now; lastLine = line;
+  writer.write(new TextEncoder().encode(line)).catch(e => { log('전송 오류: ' + e.message); disconnect(); });
+}
+
+// ===================== Three.js 가상 공간 =====================
+const host = $('three');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+host.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x141922);
+const camera = new THREE.PerspectiveCamera(40, 4 / 3, 0.1, 100);
+camera.position.set(1.6, 2.2, 5.2);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.0, 0.4);
+controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+sun.position.set(3, 6, 4);
+scene.add(sun);
+const grid = new THREE.GridHelper(8, 16, 0x335577, 0x223040);
+scene.add(grid);
+
+const metal = new THREE.MeshStandardMaterial({ color: 0xb8c2d0, metalness: 0.6, roughness: 0.35 });
+const jointMat = new THREE.MeshStandardMaterial({ color: 0x2a3140, metalness: 0.3, roughness: 0.6 });
+
+// --- 로봇 손 ---
+const hand = new THREE.Group();
+hand.position.set(0, 0.25, 0);
+scene.add(hand);
+const palm = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.1, 0.28), metal);
+palm.position.y = 0.55;
+hand.add(palm);
+const wrist = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, 0.3, 24), jointMat);
+wrist.position.y = -0.1;
+hand.add(wrist);
+
+function buildFinger(lengths, radius, color) {
+  const root = new THREE.Group();
+  const joints = [];
+  let parent = root;
+  const tipMat = new THREE.MeshStandardMaterial({ color, metalness: 0.2, roughness: 0.5 });
+  lengths.forEach((len, k) => {
+    const j = new THREE.Group();
+    if (k > 0) j.position.y = lengths[k - 1];
+    parent.add(j);
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.15, 16, 12), jointMat);
+    j.add(ball);
+    const seg = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, len, 16),
+                               k === lengths.length - 1 ? tipMat : metal);
+    seg.position.y = len / 2;
+    j.add(seg);
+    joints.push(j);
+    parent = j;
+  });
+  return { root, joints };
+}
+
+const fingerModels = [];
+// 엄지
+{
+  const m = buildFinger([0.38, 0.3], 0.085, FINGERS[0].color);
+  m.root.position.set(-0.6, 0.35, 0.05);
+  m.root.rotation.z = 0.75;
+  hand.add(m.root);
+  fingerModels.push({ ...m, maxJoint: 1.1, axis: 'thumb' });
+}
+// 나머지 4손가락
+[[-0.4, 0.42, 0.3, 0.24], [-0.13, 0.46, 0.33, 0.26], [0.14, 0.43, 0.31, 0.24], [0.41, 0.34, 0.25, 0.2]]
+  .forEach(([x, ...lens], i) => {
+    const m = buildFinger(lens, 0.075, FINGERS[i + 1].color);
+    m.root.position.set(x, 1.1, 0);
+    hand.add(m.root);
+    fingerModels.push({ ...m, maxJoint: 1.45, axis: 'x' });
+  });
+
+// --- 서보모터 5개 (실제 하드웨어의 쌍둥이) ---
+const servoModels = [];
+const servoBodyMat = new THREE.MeshStandardMaterial({ color: 0x2b6cd6, roughness: 0.5 });
+const base = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.06, 0.7), jointMat);
+base.position.set(0, 0.03, 1.7);
+scene.add(base);
+FINGERS.forEach((f, i) => {
+  const g = new THREE.Group();
+  g.position.set(-1.2 + i * 0.6, 0.06, 1.7);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.36, 0.2), servoBodyMat);
+  body.position.y = 0.18;
+  g.add(body);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.08, 16), metal);
+  shaft.position.set(-0.08, 0.4, 0);
+  g.add(shaft);
+  const horn = new THREE.Group();
+  horn.position.set(-0.08, 0.45, 0);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.03, 0.07),
+                             new THREE.MeshStandardMaterial({ color: f.color }));
+  arm.position.x = 0.13;
+  horn.add(arm);
+  g.add(horn);
+  scene.add(g);
+  servoModels.push(horn);
+});
+
+function resize() {
+  const w = host.clientWidth, h = host.clientHeight;
+  renderer.setSize(w, h, false);
+  renderer.domElement.style.width = '100%';
+  renderer.domElement.style.height = '100%';
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(host);
+resize();
+
+function updateTwin() {
+  FINGERS.forEach((f, i) => {
+    // 서보 각도 = 실제 ESP32에 보내는 값. 가상 모델도 이 값으로 움직입니다.
+    f.angle = (f.invert ? 1 - f.ratio : f.ratio) * 180;
+    $('ang' + i).textContent = Math.round(f.angle) + '°';
+    if (!manual) $('man' + i).value = Math.round(f.ratio * 180);
+
+    const m = fingerModels[i];
+    const bend = f.ratio * m.maxJoint;   // 굽힘 비율은 반전과 무관하게 손 모양에 반영
+    m.joints.forEach(j => {
+      if (m.axis === 'thumb') { j.rotation.x = bend * 0.7; j.rotation.z = -bend * 0.6; }
+      else j.rotation.x = bend;
+    });
+    servoModels[i].rotation.y = THREE.MathUtils.degToRad(f.angle - 90);
+  });
+}
+
+// ===================== 메인 루프 =====================
+function loop(now) {
+  detect();
+  updateTwin();
+  sendAngles(now);
+  controls.update();
+  renderer.render(scene, camera);
+  if (now - fpsT > 1000) { setPill('stFps', fpsCount + ' fps'); fpsCount = 0; fpsT = now; }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+log('준비 완료. ① 카메라 시작 → ② ESP32 연결 → ③ 손 펴고/주먹 쥐고 보정');
+</script>
+</body>
+</html>

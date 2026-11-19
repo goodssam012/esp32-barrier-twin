@@ -1,0 +1,6 @@
+# 컴파일 결과물 (미리 빌드된 펌웨어는 web/firmware 에 따로 보관)
+build/
+__pycache__/
+*.pyc
+# 로컬 개발 도구 설정
+.claude/

@@ -1,0 +1,1061 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>손동작 차단기 트윈</title>
+<style>
+  :root {
+    --bg: #0f1218; --panel: #181d26; --line: #2a3140; --text: #e6e9ef; --muted: #8a93a6;
+    --accent: #4f9cff; --ok: #3ccf8e; --warn: #ffb547; --err: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: "Segoe UI", "Malgun Gothic", system-ui, sans-serif; font-size: 14px; }
+  header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+           padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 17px; margin: 0 12px 0 0; }
+  button { background: var(--panel); color: var(--text); border: 1px solid var(--line);
+           padding: 7px 12px; border-radius: 6px; cursor: pointer; font: inherit; }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .pill { padding: 3px 9px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line);
+          color: var(--muted); font-size: 12px; }
+  .pill.ok { color: var(--ok); border-color: var(--ok); }
+  .pill.warn { color: var(--warn); border-color: var(--warn); }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px 16px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .view { position: relative; background: #000; border: 1px solid var(--line); border-radius: 8px;
+          overflow: hidden; aspect-ratio: 4 / 3; }
+  .view .label { position: absolute; left: 8px; top: 8px; z-index: 2; font-size: 12px;
+                 background: rgba(0,0,0,.55); padding: 3px 8px; border-radius: 4px; }
+  video, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  #three { position: absolute; inset: 0; }
+  .placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); }
+  .badge { position: absolute; right: 8px; top: 8px; z-index: 2; font-size: 15px; font-weight: 700;
+           padding: 6px 12px; border-radius: 6px; background: rgba(0,0,0,.6); }
+  .panel { margin: 0 16px 16px; background: var(--panel); border: 1px solid var(--line);
+           border-radius: 8px; padding: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .panel { grid-template-columns: 1fr; } }
+  h3 { margin: 0 0 10px; font-size: 13px; color: var(--muted); font-weight: 600; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .row .k { width: 120px; color: var(--muted); }
+  .row input[type=range] { flex: 1; }
+  .row .v { width: 48px; text-align: right; }
+  .meter { position: relative; height: 22px; background: #0b0e13; border-radius: 5px; flex: 1; overflow: hidden; }
+  .meter > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); transition: width .05s; }
+  .meter > b { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--warn); }
+  .meter > span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; }
+  .big { font-size: 22px; font-weight: 700; }
+  .muted { color: var(--muted); }
+  .gear { margin-left: auto; font-size: 18px; line-height: 1; padding: 6px 10px; }
+  dialog { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0;
+           background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 10px; }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  .dhead { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px;
+           border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 1; }
+  .dbody { padding: 4px 16px 16px; }
+  .dbody section { border-bottom: 1px solid var(--line); padding: 12px 0; }
+  .dbody section:last-child { border-bottom: 0; }
+  .dbody h4 { margin: 0 0 10px; font-size: 14px; }
+  .dbody .k { width: 80px; }
+  .dbody input:not([type=range]):not([type=file]), .dbody select {
+    background: #0b0e13; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; min-width: 0; }
+  .hint { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+  .prog { position: relative; flex: 1; height: 26px; background: #0b0e13; border-radius: 6px; overflow: hidden; min-width: 120px; }
+  .prog > i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--ok); transition: width .15s; }
+  .prog > i.indet { background: repeating-linear-gradient(45deg, #2a3140 0 10px, #3a4560 10px 20px); }
+  .prog > span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; }
+  .nets { max-height: 190px; overflow: auto; margin-bottom: 10px; border-radius: 6px; background: #0b0e13; }
+  .nets:empty { display: none; }
+  .net { display: flex; width: 100%; gap: 10px; align-items: center; text-align: left; border: 0;
+         border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
+  .net.sel { background: #1d2a40; }
+  .net .sig { width: 40px; color: var(--ok); font-size: 12px; }
+  .net .ssid { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  #setLog { height: 140px; overflow: auto; background: #0b0e13; border-radius: 6px; padding: 6px 8px;
+            font-family: Consolas, monospace; font-size: 12px; color: var(--muted); white-space: pre-wrap; }
+  #log { height: 120px; overflow: auto; background: #0b0e13; border-radius: 6px; padding: 6px 8px;
+         font-family: Consolas, monospace; font-size: 12px; color: var(--muted); white-space: pre-wrap; }
+</style>
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<header>
+  <h1>🚧 손동작 차단기 디지털 트윈 (ESP32-S3 · 서보 1개 · Wi-Fi)</h1>
+  <button id="btnCam" class="primary">카메라 시작</button>
+  <input id="txtAddr" placeholder="barrier.local 또는 192.168.x.x" title="ESP32 주소"
+         style="background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:7px 10px;width:210px;font:inherit">
+  <button id="btnConn">ESP32 연결</button>
+  <span id="stModel" class="pill">모델 로딩 중…</span>
+  <span id="stHand" class="pill">손 없음</span>
+  <span id="stConn" class="pill">Wi-Fi 미연결</span>
+  <span id="stTwin" class="pill">트윈: 시뮬레이션</span>
+  <button id="btnSettings" class="gear" title="환경설정 (ESP32 기본 세팅)" aria-label="환경설정">⚙</button>
+</header>
+
+<dialog id="setDlg">
+  <div class="dhead">
+    <b>⚙ 환경설정 — ESP32-S3 기본 세팅 (USB)</b>
+    <button id="setClose" aria-label="닫기">✕</button>
+  </div>
+  <div class="dbody">
+    <section>
+      <h4>0. USB 연결</h4>
+      <div class="row">
+        <button id="setPort" class="primary">USB 포트 선택</button>
+        <span id="setPortInfo" class="muted">선택 안 됨</span>
+      </div>
+      <div class="row"><span class="k">보드 상태</span><span id="setBoard" class="muted">-</span></div>
+      <p class="hint">ESP32-S3를 USB 케이블로 PC에 연결하세요. Arduino IDE 시리얼 모니터가 열려 있으면 닫아야 합니다.</p>
+    </section>
+
+    <section>
+      <h4>① 펌웨어 업로드</h4>
+      <div class="row"><span class="k">소스</span><select id="setSource" style="flex:1"></select></div>
+      <div class="row" id="setBinRow" style="display:none">
+        <span class="k">.bin 파일</span><input type="file" id="setBin" accept=".bin" style="flex:1">
+        <select id="setAddr" title="쓰기 주소">
+          <option value="0x0">0x0 (merged 통합)</option>
+          <option value="0x10000">0x10000 (앱만)</option>
+        </select>
+      </div>
+      <div class="row"><span class="k">USB 방식</span>
+        <select id="setUsbMode" style="flex:1">
+          <option value="cdc">네이티브 USB 포트 (USB CDC On Boot 켬)</option>
+          <option value="uart">UART/COM 포트 (CH340·CP210x)</option>
+        </select>
+      </div>
+      <div class="row">
+        <select id="setBaud" title="업로드 속도">
+          <option value="460800">빠르게 (460800)</option>
+          <option value="115200">안전하게 (115200)</option>
+        </select>
+        <button id="setFlash" class="primary">업로드</button>
+        <div class="prog"><i id="setProg"></i><span id="setProgTxt"></span></div>
+      </div>
+      <p class="hint">연결이 안 되면 보드의 <b>BOOT</b> 버튼을 누른 채 <b>RST</b>를 눌렀다 떼고 다시 시도하세요.</p>
+    </section>
+
+    <section>
+      <h4>② Wi-Fi 설정</h4>
+      <div class="row">
+        <button id="setScan">Wi-Fi 검색</button>
+        <span id="setWifiState" class="muted">-</span>
+      </div>
+      <div id="setNets" class="nets"></div>
+      <div class="row"><span class="k">SSID</span><input id="setSsid" style="flex:1" placeholder="목록에서 선택 또는 직접 입력"></div>
+      <div class="row"><span class="k">비밀번호</span><input id="setPass" type="password" style="flex:1" autocomplete="off"></div>
+      <div class="row">
+        <button id="setJoin" class="primary">접속 및 저장</button>
+        <button id="setForget">저장된 Wi-Fi 삭제</button>
+      </div>
+      <div class="row" id="setGo" style="display:none">
+        <span>보드 IP: <b id="setIp"></b></span>
+        <button class="primary" id="setGoBtn">이 주소로 차단기 연결 ▶</button>
+      </div>
+    </section>
+
+    <section>
+      <h4 style="display:flex;justify-content:space-between;align-items:center">로그
+        <button id="setCopy" type="button" style="font-size:12px;padding:3px 8px">로그 복사</button></h4>
+      <div id="setLog"></div>
+    </section>
+  </div>
+</dialog>
+
+<main>
+  <div class="view">
+    <span class="label" id="camLabel">웹 카메라 — 손 펴기 = 내림 / 주먹 = 올림</span>
+    <span id="gesture" class="badge">-</span>
+    <video id="video" playsinline muted></video>
+    <canvas id="overlay"></canvas>
+    <div id="camPh" class="placeholder">[카메라 시작]을 누르세요</div>
+  </div>
+  <div class="view">
+    <span class="label">가상 차단기 — 드래그로 회전</span>
+    <span id="gateBadge" class="badge">닫힘</span>
+    <div id="three"></div>
+  </div>
+</main>
+
+<section class="panel">
+  <div>
+    <h3>상태</h3>
+    <div class="row"><span class="k">제어 방식</span>
+      <select id="selMode" style="flex:1;background:#0b0e13;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit">
+        <option value="tilt">손바닥 각도 → 차단바 각도 (비례 제어)</option>
+        <option value="gesture">주먹 = 올림 / 손 펴기 = 내림 (2단 제어)</option>
+      </select></div>
+    <div class="row"><span class="k">차단기</span><span id="gateText" class="big">닫힘 ▼</span></div>
+    <div class="row"><span class="k">서보 각도</span>
+      <span>현재 <b id="curAng">0</b>° / 목표 <b id="tgtAng">0</b>°</span></div>
+    <div class="row"><span class="k" id="meterLabel">주먹 정도</span>
+      <div class="meter"><i id="fistBar"></i><b id="thLo"></b><b id="thHi"></b><span id="fistTxt">-</span></div></div>
+    <div class="row">
+      <button id="btnOpen">① 손 펴고 보정</button>
+      <button id="btnFist">② 주먹 쥐고 보정</button>
+      <button id="btnReset">보정 초기화</button>
+    </div>
+    <div class="row">
+      <span class="k">수동 테스트</span>
+      <button id="btnUp">올리기 ▲</button>
+      <button id="btnDown">내리기 ▼</button>
+      <span class="muted">(카메라 없이 동작 확인)</span>
+    </div>
+  </div>
+  <div>
+    <h3>설정</h3>
+    <div class="row"><span class="k">내림 각도</span>
+      <input type="range" id="rngDown" min="0" max="180" value="0"><span id="vDown" class="v">0°</span></div>
+    <div class="row"><span class="k">올림 각도</span>
+      <input type="range" id="rngUp" min="0" max="180" value="90"><span id="vUp" class="v">90°</span></div>
+    <div class="row"><span class="k">이동 속도</span>
+      <input type="range" id="rngSpeed" min="30" max="360" step="10" value="120"><span id="vSpeed" class="v">120°/s</span></div>
+    <div class="row" id="rowHold"><span class="k">판정 유지시간</span>
+      <input type="range" id="rngHold" min="0" max="1000" step="50" value="250"><span id="vHold" class="v">250ms</span></div>
+    <h3>통신 로그</h3>
+    <div id="log"></div>
+  </div>
+</section>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { HandLandmarker, FilesetResolver, DrawingUtils }
+  from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+
+const $ = id => document.getElementById(id);
+const setPill = (id, text, cls) => { const el = $(id); el.textContent = text; el.className = 'pill ' + (cls || ''); };
+function log(msg) {
+  const el = $('log');
+  el.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+  if (el.textContent.length > 8000) el.textContent = el.textContent.slice(-6000);
+  el.scrollTop = el.scrollHeight;
+}
+
+// ===================== 설정 (브라우저에 저장) =====================
+const DEF = { downAngle: 0, upAngle: 90, speed: 120, holdMs: 250, open: 0.15, fist: 0.75,
+              mode: 'tilt', tiltLo: 10, tiltHi: 80 };   // tiltLo/Hi: 손바닥 각도(도) → 완전 내림/완전 올림
+const cfg = { ...DEF };
+try { Object.assign(cfg, JSON.parse(localStorage.getItem('barrierCfg') || '{}')); } catch {}
+const save = () => { try { localStorage.setItem('barrierCfg', JSON.stringify(cfg)); } catch {} };
+
+function bindRange(id, key, unit, onChange) {
+  const r = $('rng' + id), v = $('v' + id);
+  r.value = cfg[key]; v.textContent = cfg[key] + unit;
+  r.oninput = () => { cfg[key] = +r.value; v.textContent = r.value + unit; save(); onChange && onChange(); };
+}
+bindRange('Down', 'downAngle', '°', () => sendTarget(true));
+bindRange('Up', 'upAngle', '°', () => sendTarget(true));
+bindRange('Speed', 'speed', '°/s', () => sendSpeed());
+bindRange('Hold', 'holdMs', 'ms');
+
+// 주먹 정도(0~1)에 대한 판정 경계: 보정값 사이의 40% / 60% 지점 (히스테리시스)
+const thresholds = () => {
+  const span = cfg.fist - cfg.open;
+  return { lo: cfg.open + span * 0.4, hi: cfg.open + span * 0.6 };
+};
+function showThresholds() {
+  const { lo, hi } = thresholds();
+  $('thLo').style.left = (lo * 100) + '%';
+  $('thHi').style.left = (hi * 100) + '%';
+}
+showThresholds();
+
+// ===================== 손 인식 =====================
+// 엄지를 제외한 4손가락의 굽힘(MCP+PIP+DIP 관절 각도 합)을 평균내어 주먹 정도를 구합니다.
+const CHAINS = [[0, 5, 6, 7, 8], [0, 9, 10, 11, 12], [0, 13, 14, 15, 16], [0, 17, 18, 19, 20]];
+const MAX_BEND = 240;   // 완전히 쥔 손가락의 대략적인 관절각 합(도)
+
+function bendOf(lm, chain) {
+  let sum = 0;
+  for (let k = 0; k < chain.length - 2; k++) {
+    const a = lm[chain[k]], b = lm[chain[k + 1]], c = lm[chain[k + 2]];
+    const v1 = [b.x - a.x, b.y - a.y, b.z - a.z], v2 = [c.x - b.x, c.y - b.y, c.z - b.z];
+    const n = Math.hypot(...v1) * Math.hypot(...v2) || 1;
+    sum += Math.acos(Math.min(1, Math.max(-1, (v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2]) / n)));
+  }
+  return sum * 180 / Math.PI;
+}
+
+const video = $('video'), overlay = $('overlay'), octx = overlay.getContext('2d');
+const drawer = new DrawingUtils(octx);
+let landmarker = null, handVisible = false, fistness = 0, lastVideoTime = -1;
+
+(async () => {
+  const fileset = await FilesetResolver.forVisionTasks(
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+  const opts = delegate => ({
+    baseOptions: { modelAssetPath:
+      'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+      delegate },
+    runningMode: 'VIDEO', numHands: 1,
+    minHandDetectionConfidence: 0.6, minHandPresenceConfidence: 0.6, minTrackingConfidence: 0.5,
+  });
+  try { landmarker = await HandLandmarker.createFromOptions(fileset, opts('GPU')); }
+  catch { landmarker = await HandLandmarker.createFromOptions(fileset, opts('CPU')); }
+  setPill('stModel', '모델 준비됨', 'ok');
+})().catch(e => { setPill('stModel', '모델 로딩 실패', 'warn'); log('모델 로딩 실패: ' + e.message); });
+
+$('btnCam').onclick = async () => {
+  try {
+    video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+    await video.play();
+    $('camPh').style.display = 'none';
+    $('btnCam').disabled = true;
+    log('카메라 시작');
+  } catch (e) { log('카메라 오류: ' + e.message); }
+};
+
+function detect() {
+  if (!landmarker || video.readyState < 2 || video.currentTime === lastVideoTime) return;
+  lastVideoTime = video.currentTime;
+  const res = landmarker.detectForVideo(video, performance.now());
+  if (overlay.width !== video.videoWidth) { overlay.width = video.videoWidth; overlay.height = video.videoHeight; }
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+
+  handVisible = !!(res.landmarks && res.landmarks.length);
+  setPill('stHand', handVisible ? '손 인식됨' : '손 없음 (마지막 상태 유지)', handVisible ? 'ok' : '');
+  if (!handVisible) { $('fistTxt').textContent = '손 없음'; return; }
+
+  const lm2d = res.landmarks[0];
+  const color = gestureState === 'fist' ? '#ff6b6b' : '#3ccf8e';
+  drawer.drawConnectors(lm2d, HandLandmarker.HAND_CONNECTIONS, { color, lineWidth: 3 });
+  drawer.drawLandmarks(lm2d, { color: '#ffffff', radius: 3, lineWidth: 1 });
+
+  const lm = (res.worldLandmarks && res.worldLandmarks[0]) || lm2d;
+  const raw = CHAINS.reduce((s, c) => s + bendOf(lm, c), 0) / CHAINS.length / MAX_BEND;
+  fistness = 0.6 * fistness + 0.4 * Math.min(1, Math.max(0, raw));   // 떨림 완화
+
+  // 손바닥 각도: 손목(0) → 중지 뿌리(9) 방향이 수평이면 0°, 위를 향하면 90°
+  const W = overlay.width, H = overlay.height;
+  const dx = (lm2d[9].x - lm2d[0].x) * W, dy = (lm2d[9].y - lm2d[0].y) * H;
+  const deg = Math.min(90, Math.max(0, Math.atan2(-dy, Math.abs(dx)) * 180 / Math.PI));
+  palmDeg = 0.6 * palmDeg + 0.4 * deg;
+
+  if (cfg.mode === 'tilt') {
+    tiltRatio = Math.min(1, Math.max(0, (palmDeg - cfg.tiltLo) / (cfg.tiltHi - cfg.tiltLo)));
+    // 손목→손가락 방향 안내선
+    octx.strokeStyle = '#ffd34d'; octx.lineWidth = 5;
+    octx.beginPath();
+    octx.moveTo(lm2d[0].x * W, lm2d[0].y * H);
+    octx.lineTo(lm2d[0].x * W + dx * 2.2, lm2d[0].y * H + dy * 2.2);
+    octx.stroke();
+    $('fistBar').style.width = (tiltRatio * 100) + '%';
+    $('fistTxt').textContent = `손바닥 ${Math.round(palmDeg)}° → 차단바 ${Math.round(tiltRatio * 90)}°`;
+    $('gesture').textContent = `✋ ${Math.round(palmDeg)}°`;
+    $('gesture').style.color = '#ffd34d';
+  } else {
+    $('fistBar').style.width = (fistness * 100) + '%';
+    $('fistTxt').textContent = Math.round(fistness * 100) + '%';
+    updateGesture(performance.now());
+  }
+}
+
+// ===================== 손바닥 각도(비례) 모드 =====================
+let palmDeg = 0, tiltRatio = 0;
+function applyMode() {
+  const tilt = cfg.mode === 'tilt';
+  $('selMode').value = cfg.mode;
+  $('meterLabel').textContent = tilt ? '손바닥 각도' : '주먹 정도';
+  $('camLabel').textContent = tilt ? '웹 카메라 — 손을 눕히면 내림 / 세우면 올림 (기울기만큼)'
+                                   : '웹 카메라 — 손 펴기 = 내림 / 주먹 = 올림';
+  $('btnOpen').textContent = tilt ? '① 손 눕히고 보정 (내림)' : '① 손 펴고 보정';
+  $('btnFist').textContent = tilt ? '② 손 세우고 보정 (올림)' : '② 주먹 쥐고 보정';
+  $('thLo').style.display = $('thHi').style.display = tilt ? 'none' : '';
+  $('rowHold').style.display = tilt ? 'none' : '';
+  $('fistBar').style.width = '0%';
+  $('fistTxt').textContent = '-';
+  if (tilt) tiltRatio = gateUp ? 1 : 0;   // 모드 전환 시 현재 위치에서 시작
+  else gateUp = tiltRatio > 0.5;
+  sendTarget(true);
+}
+$('selMode').onchange = e => { cfg.mode = e.target.value; save(); applyMode(); log('제어 방식: ' + e.target.selectedOptions[0].text); };
+
+// ===================== 제스처 판정 (히스테리시스 + 유지시간) =====================
+let gestureState = 'open';          // 'open' | 'fist'
+let candidate = null, candidateSince = 0;
+
+function updateGesture(now) {
+  const { lo, hi } = thresholds();
+  let want = gestureState;
+  if (fistness >= hi) want = 'fist';
+  else if (fistness <= lo) want = 'open';
+
+  if (want === gestureState) { candidate = null; }
+  else if (candidate !== want) { candidate = want; candidateSince = now; }
+  else if (now - candidateSince >= cfg.holdMs) {
+    gestureState = want; candidate = null;
+    setGate(want === 'fist');
+    log(want === 'fist' ? '✊ 주먹 → 차단기 올림' : '✋ 손 펴짐 → 차단기 내림');
+  }
+  $('gesture').textContent = gestureState === 'fist' ? '✊ 주먹' : '✋ 펼침';
+  $('gesture').style.color = gestureState === 'fist' ? '#ff6b6b' : '#3ccf8e';
+}
+
+$('btnOpen').onclick = () => {
+  if (!handVisible) return log('보정 실패: 손이 보이지 않습니다.');
+  if (cfg.mode === 'tilt') return calTilt('lo');
+  cfg.open = fistness; fixCal(); log(`펼친 손 보정: ${Math.round(fistness * 100)}%`);
+};
+$('btnFist').onclick = () => {
+  if (!handVisible) return log('보정 실패: 손이 보이지 않습니다.');
+  if (cfg.mode === 'tilt') return calTilt('hi');
+  cfg.fist = fistness; fixCal(); log(`주먹 보정: ${Math.round(fistness * 100)}%`);
+};
+$('btnReset').onclick = () => {
+  if (cfg.mode === 'tilt') { cfg.tiltLo = DEF.tiltLo; cfg.tiltHi = DEF.tiltHi; save(); return log('손바닥 각도 보정 초기화 (10°~80°)'); }
+  cfg.open = DEF.open; cfg.fist = DEF.fist; fixCal(); log('보정 초기화');
+};
+function calTilt(which) {
+  if (which === 'lo') cfg.tiltLo = Math.round(palmDeg); else cfg.tiltHi = Math.round(palmDeg);
+  if (cfg.tiltHi - cfg.tiltLo < 20) {   // 범위가 너무 좁으면 최소 20° 확보
+    if (which === 'lo') cfg.tiltHi = Math.min(90, cfg.tiltLo + 20); else cfg.tiltLo = Math.max(0, cfg.tiltHi - 20);
+  }
+  save();
+  log(`손바닥 각도 보정: ${cfg.tiltLo}°(내림) ~ ${cfg.tiltHi}°(올림)`);
+}
+function fixCal() {
+  if (cfg.fist - cfg.open < 0.15) cfg.fist = Math.min(1, cfg.open + 0.15);
+  if (cfg.fist - cfg.open < 0.15) cfg.open = cfg.fist - 0.15;
+  save(); showThresholds();
+}
+
+$('btnUp').onclick = () => { gestureState = 'fist'; tiltRatio = 1; setGate(true); log('수동: 올림'); };
+$('btnDown').onclick = () => { gestureState = 'open'; tiltRatio = 0; setGate(false); log('수동: 내림'); };
+
+// ===================== 차단기 상태 / 서보 =====================
+let gateUp = false;
+let simAngle = cfg.downAngle;      // ESP32 미연결 시 시뮬레이션 위치
+let realAngle = null, realAt = 0;  // ESP32가 보고한 실제 위치
+
+const targetAngle = () => cfg.mode === 'tilt'
+  ? Math.round(cfg.downAngle + tiltRatio * (cfg.upAngle - cfg.downAngle))
+  : (gateUp ? cfg.upAngle : cfg.downAngle);
+function setGate(up) { gateUp = up; sendTarget(true); }
+
+// ===================== Wi-Fi (WebSocket) =====================
+// ESP32-S3가 포트 81에서 WebSocket 서버를 엽니다. 같은 공유기(Wi-Fi)에 PC와 ESP32가 연결돼 있어야 합니다.
+let ws = null, wantConnected = false, retryTimer = null;
+const isOpen = () => ws && ws.readyState === WebSocket.OPEN;
+
+const addrEl = $('txtAddr');
+try { addrEl.value = localStorage.getItem('barrierAddr') || 'barrier.local'; } catch { addrEl.value = 'barrier.local'; }
+
+function writeLine(s) { if (isOpen()) ws.send(s); }
+let lastSentTarget = null, lastSentAt = 0;
+function sendTarget(force) {
+  const t = targetAngle(), now = performance.now();
+  if (!force && t === lastSentTarget && now - lastSentAt < 1000) return;  // 1초마다 재확인 전송
+  if (!force && t !== lastSentTarget && now - lastSentAt < 50) return;    // 비례 모드: 최대 20회/초
+  lastSentTarget = t; lastSentAt = now;
+  writeLine('A,' + t);
+}
+const sendSpeed = () => writeLine('V,' + cfg.speed);
+
+function connect() {
+  const addr = addrEl.value.trim().replace(/^wss?:\/\//, '').replace(/\/.*$/, '');
+  if (!addr) return log('ESP32 주소를 입력하세요 (시리얼 모니터에 출력된 IP).');
+  try { localStorage.setItem('barrierAddr', addr); } catch {}
+  const url = 'ws://' + (addr.includes(':') ? addr : addr + ':81');
+  wantConnected = true;
+  clearTimeout(retryTimer);
+  setPill('stConn', '연결 중…', 'warn');
+  log('접속 시도: ' + url);
+  try { ws = new WebSocket(url); }
+  catch (e) {   // https 페이지에서 ws:// 를 즉시 차단하는 경우
+    wantConnected = false;
+    setPill('stConn', 'Wi-Fi 미연결');
+    return log('연결 차단됨 (' + e.name + '): 웹 배포본(https)에서는 ESP32에 직접 접속할 수 없습니다. PC에서 start.bat으로 연 페이지를 사용하세요.');
+  }
+  ws.onopen = () => {
+    setPill('stConn', 'Wi-Fi 연결됨', 'ok');
+    $('btnConn').textContent = '연결 해제';
+    log('ESP32 연결됨 (Wi-Fi)');
+    writeLine('P'); sendSpeed(); sendTarget(true);
+  };
+  ws.onmessage = ev => {
+    const line = String(ev.data).trim();
+    if (line.startsWith('POS,')) { realAngle = parseFloat(line.split(',')[1]); realAt = performance.now(); }
+    else if (line) log('ESP32 ▶ ' + line);
+  };
+  ws.onclose = () => {
+    realAngle = null;
+    if (wantConnected) {          // 끊기면 2초 후 자동 재접속
+      setPill('stConn', '재연결 대기…', 'warn');
+      retryTimer = setTimeout(connect, 2000);
+    } else {
+      setPill('stConn', 'Wi-Fi 미연결');
+      $('btnConn').textContent = 'ESP32 연결';
+    }
+  };
+  ws.onerror = () => log(location.protocol === 'https:'
+    ? '연결 실패: 웹 배포본(https)에서는 브라우저가 ESP32(ws://) 접속을 막을 수 있습니다. 실제 제어는 PC에서 start.bat으로 연 페이지를 사용하세요.'
+    : '연결 실패: 주소, 같은 Wi-Fi 여부, ESP32 전원을 확인하세요.');
+}
+
+function disconnect() {
+  wantConnected = false;
+  clearTimeout(retryTimer);
+  if (ws) ws.close();
+  setPill('stConn', 'Wi-Fi 미연결');
+  $('btnConn').textContent = 'ESP32 연결';
+  log('연결 해제');
+}
+
+$('btnConn').onclick = () => (wantConnected ? disconnect() : connect());
+addrEl.onkeydown = e => { if (e.key === 'Enter' && !wantConnected) connect(); };
+
+// ===================== Three.js 가상 차단기 =====================
+const host = $('three');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+host.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a2130);
+scene.fog = new THREE.Fog(0x1a2130, 14, 30);
+const camera = new THREE.PerspectiveCamera(42, 4 / 3, 0.1, 100);
+camera.position.set(5.5, 4, 7);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1, 0);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI / 2 - 0.05;
+
+scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x303a48, 1.0));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(4, 8, 5);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+Object.assign(sun.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8 });
+scene.add(sun);
+
+const mat = c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.6 });
+const box = (w, h, d, m) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.castShadow = o.receiveShadow = true; return o; };
+
+// 바닥과 도로 (도로는 z 방향)
+const ground = box(30, 0.1, 30, mat(0x2b3542)); ground.position.y = -0.05; scene.add(ground);
+const road = box(4, 0.02, 30, mat(0x3a3f47)); road.position.y = 0.01; scene.add(road);
+for (let z = -14; z < 15; z += 2) { const l = box(0.12, 0.03, 1, mat(0xe9e9e9)); l.position.set(0, 0.02, z); scene.add(l); }
+const stopLine = box(4, 0.03, 0.25, mat(0xffffff)); stopLine.position.set(0, 0.02, -1); scene.add(stopLine);
+
+// 차단기 기둥(도로 왼쪽)
+const post = box(0.5, 1.2, 0.5, mat(0xf2c230)); post.position.set(-2.6, 0.6, 0); scene.add(post);
+const head = box(0.6, 0.4, 0.6, mat(0x2d2d2d)); head.position.set(-2.6, 1.35, 0); scene.add(head);
+const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12),
+  new THREE.MeshStandardMaterial({ color: 0xff3030, emissive: 0xff0000, emissiveIntensity: 1 }));
+lamp.position.set(-2.6, 1.65, 0); scene.add(lamp);
+
+// 차단봉: 회전축(pivot)을 기준으로 +x 방향으로 뻗음. rotation.z = 0 수평(내림), 90° 수직(올림)
+const pivot = new THREE.Group(); pivot.position.set(-2.6, 1.35, 0.35); scene.add(pivot);
+const BOOM_LEN = 4.6, SEGS = 8;
+for (let i = 0; i < SEGS; i++) {
+  const s = box(BOOM_LEN / SEGS, 0.14, 0.08, mat(i % 2 ? 0xffffff : 0xe03030));
+  s.position.x = 0.15 + (i + 0.5) * BOOM_LEN / SEGS;
+  pivot.add(s);
+}
+const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.12, 20), mat(0x888888));
+hub.rotation.x = Math.PI / 2; pivot.add(hub);
+
+// 자동차 (차단기가 열리면 통과)
+const car = new THREE.Group();
+const carBody = box(1.5, 0.5, 2.6, mat(0x2f7de1)); carBody.position.y = 0.45; car.add(carBody);
+const cabin = box(1.3, 0.45, 1.4, mat(0x9cc8ff)); cabin.position.set(0, 0.92, -0.15); car.add(cabin);
+for (const [x, z] of [[-0.75, 0.85], [0.75, 0.85], [-0.75, -0.85], [0.75, -0.85]]) {
+  const w = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.2, 18), mat(0x111111));
+  w.rotation.z = Math.PI / 2; w.position.set(x, 0.28, z); w.castShadow = true; car.add(w);
+}
+car.position.set(0.9, 0, -12);
+scene.add(car);
+
+function resize() {
+  const w = host.clientWidth, h = host.clientHeight;
+  renderer.setSize(w, h, false);
+  renderer.domElement.style.width = '100%'; renderer.domElement.style.height = '100%';
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(host);
+resize();
+
+// 서보 각도 → 차단봉 각도(0~90°): 내림각도=수평, 올림각도=수직
+function boomFromServo(a) {
+  const span = cfg.upAngle - cfg.downAngle;
+  if (span === 0) return 0;
+  return Math.min(1, Math.max(0, (a - cfg.downAngle) / span));
+}
+
+// ===================== 메인 루프 =====================
+let prev = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, (now - prev) / 1000); prev = now;
+  detect();
+
+  // 시뮬레이션: 펌웨어와 같은 등속 이동
+  const t = targetAngle(), step = cfg.speed * dt;
+  simAngle = Math.abs(t - simAngle) <= step ? t : simAngle + Math.sign(t - simAngle) * step;
+
+  // 실물 연결 + 최근 보고가 있으면 실제 위치로 트윈을 움직임
+  const live = isOpen() && realAngle !== null && now - realAt < 2000;
+  const angle = live ? realAngle : simAngle;
+  setPill('stTwin', live ? '트윈: 실물 위치 동기화' : '트윈: 시뮬레이션', live ? 'ok' : '');
+  if (isOpen()) sendTarget(false);
+
+  const open = boomFromServo(angle);
+  pivot.rotation.z = open * Math.PI / 2;
+  const fullyUp = open > 0.95, fullyDown = open < 0.05;
+  lamp.material.emissive.setHex(fullyUp ? 0x00ff40 : 0xff0000);
+  lamp.material.color.setHex(fullyUp ? 0x30ff60 : 0xff3030);
+  lamp.material.emissiveIntensity = (!fullyUp && !fullyDown) ? (Math.sin(now / 80) > 0 ? 1 : 0.1) : 1;
+
+  const label = fullyUp ? '열림 ▲' : fullyDown ? '닫힘 ▼'
+    : cfg.mode === 'tilt' ? `${Math.round(open * 90)}° 열림` : (gateUp ? '올라가는 중…' : '내려가는 중…');
+  $('gateText').textContent = label;
+  $('gateBadge').textContent = label;
+  $('gateBadge').style.color = fullyUp ? '#3ccf8e' : fullyDown ? '#ff6b6b' : '#ffb547';
+  $('curAng').textContent = angle.toFixed(0);
+  $('tgtAng').textContent = t;
+
+  // 자동차: 차단기가 완전히 열리지 않았으면 정지선 앞에서 멈춤
+  const front = car.position.z + 1.3;
+  const speed = 4;
+  if (!(front < -1.1 && front + speed * dt >= -1.1 && !fullyUp)) {
+    if (!(front >= -1.1 && front < -1.0 && !fullyUp)) car.position.z += speed * dt;
+  }
+  if (car.position.z > 14) car.position.z = -14;
+
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+applyMode();
+requestAnimationFrame(loop);
+log('준비 완료. 카메라 시작 → ESP32 연결 → 제어 방식 선택 → 보정 ①②');
+</script>
+<script type="module">
+// ⚙ 환경설정: USB로 ESP32-S3 기본 세팅 (펌웨어 업로드 + Wi-Fi 검색/접속)
+// 펌웨어 업로드는 Espressif의 esptool-js(브라우저용 esptool)를 Web Serial로 사용합니다.
+const ESPTOOL_URL = 'https://unpkg.com/esptool-js@0.6.1/bundle.js';
+const ESP_VID = 0x303a;   // Espressif 네이티브 USB
+
+const $ = id => document.getElementById(id);
+const dlg = $('setDlg');
+
+function slog(msg) {
+  const el = $('setLog');
+  el.textContent += msg.endsWith('\n') ? msg : msg + '\n';
+  if (el.textContent.length > 20000) el.textContent = el.textContent.slice(-15000);
+  el.scrollTop = el.scrollHeight;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function busy(on) {
+  dlg.querySelectorAll('button, select, input').forEach(el => {
+    if (el.id !== 'setClose' && el.id !== 'setCopy') el.disabled = on;
+  });
+  if (!on) refreshButtons();
+}
+
+// ===================== USB 포트 =====================
+let usbPort = null, portInfo = null;
+let text = null;          // 텍스트 시리얼 세션 { reader, writer, pipe }
+let lineWaiters = [];
+
+function describePort(info) {
+  const vid = info.usbVendorId, pid = info.usbProductId;
+  const hex = n => n == null ? '?' : n.toString(16).padStart(4, '0');
+  const name = vid === ESP_VID ? 'ESP32-S3 네이티브 USB'
+    : vid === 0x1a86 ? 'CH340 USB-UART' : vid === 0x10c4 ? 'CP210x USB-UART'
+    : vid === 0x0403 ? 'FTDI USB-UART' : 'USB 시리얼';
+  return `${name} (${hex(vid)}:${hex(pid)})`;
+}
+
+$('setPort').onclick = async () => {
+  if (!('serial' in navigator)) return slog('이 브라우저는 Web Serial을 지원하지 않습니다. Chrome/Edge를 사용하세요.');
+  try {
+    await closeText();
+    usbPort = await navigator.serial.requestPort();
+    portInfo = usbPort.getInfo();
+    $('setPortInfo').textContent = describePort(portInfo);
+    // 네이티브 USB면 "USB CDC On Boot" 켠 빌드가 필요
+    $('setUsbMode').value = portInfo.usbVendorId === ESP_VID ? 'cdc' : 'uart';
+    pickPrebuilt();
+    slog('포트 선택: ' + describePort(portInfo));
+    refreshButtons();
+    checkBoard();
+  } catch (e) { if (e.name !== 'NotFoundError') slog('포트 선택 실패: ' + e.message); }
+};
+
+async function openText() {
+  if (text) return;
+  await usbPort.open({ baudRate: 115200 });
+  // UART 보드의 자동 리셋 회로가 칩을 리셋 상태로 잡아두지 않도록 신호를 내림
+  try { await usbPort.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch {}
+  const dec = new TextDecoderStream();
+  const pipe = usbPort.readable.pipeTo(dec.writable).catch(() => {});
+  const reader = dec.readable.getReader();
+  const writer = usbPort.writable.getWriter();
+  text = { reader, writer, pipe };
+  (async () => {
+    let buf = '';
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += value;
+        let k;
+        while ((k = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, k).replace(/\r$/, ''); buf = buf.slice(k + 1);
+          if (!line) continue;
+          if (!line.startsWith('AP\t')) slog('ESP32 ▶ ' + line);
+          lineWaiters.forEach(w => w(line));
+        }
+      }
+    } catch {}
+  })();
+}
+
+async function closeText() {
+  if (!text) return;
+  const t = text; text = null;
+  try { await t.reader.cancel(); } catch {}
+  await t.pipe;
+  try { t.writer.releaseLock(); } catch {}
+  try { await usbPort.close(); } catch {}
+}
+
+// 명령을 보내고 done(line)이 true가 될 때까지의 줄을 모아 반환
+async function command(cmd, done, timeoutMs) {
+  if (flashing) throw new Error('업로드 중');
+  await openText();
+  const lines = [];
+  return new Promise((resolve, reject) => {
+    const w = line => {
+      lines.push(line);
+      if (done(line)) { cleanup(); resolve(lines); }
+    };
+    const timer = setTimeout(() => { cleanup(); reject(new Error('응답 없음 (시간 초과)')); }, timeoutMs);
+    const cleanup = () => { clearTimeout(timer); lineWaiters = lineWaiters.filter(x => x !== w); };
+    lineWaiters.push(w);
+    text.writer.write(new TextEncoder().encode(cmd + '\n')).catch(e => { cleanup(); reject(e); });
+  });
+}
+
+let boardOk = false;
+let flashing = false;      // 업로드 중에는 보드 확인 등 다른 시리얼 통신 금지
+let checking = null;       // 진행 중인 보드 확인 작업
+function checkBoard() {
+  checking = checkBoardInner().finally(() => { checking = null; });
+  return checking;
+}
+async function checkBoardInner() {
+  boardOk = false;
+  $('setBoard').textContent = '확인 중…';
+  for (let i = 0; i < 3 && !boardOk && !flashing; i++) {
+    try {
+      const lines = await command('INFO', l => l.startsWith('INFO,'), 1200);
+      const v = lines.find(l => l.startsWith('INFO,')).split(',');
+      boardOk = v[1] === 'barrier';
+      $('setBoard').textContent = boardOk ? `차단기 펌웨어 v${v[2]}` : `다른 펌웨어 (${v[1]})`;
+    } catch { await sleep(500); }
+  }
+  if (flashing) return;
+  if (!boardOk) $('setBoard').textContent = '차단기 펌웨어 없음 → ① 펌웨어 업로드 필요';
+  if (boardOk) {
+    try {
+      const st = (await command('STATUS', l => l.startsWith('STATUS,'), 1500)).pop().split(',');
+      $('setWifiState').textContent = st[1] === '1' ? `접속됨: ${st[2]} (${st[3]})` : (st[2] ? `미접속 (저장: ${st[2]})` : '저장된 Wi-Fi 없음');
+      if (st[1] === '1') showIp(st[3]);
+    } catch {}
+  }
+  refreshButtons();
+}
+
+// ===================== ① 펌웨어 업로드 =====================
+let cliAvailable = false;
+async function loadSketches() {
+  const sel = $('setSource');
+  sel.innerHTML = '';
+  try {
+    const r = await fetch('/api/sketches');
+    if (!r.ok) throw new Error();
+    const j = await r.json();
+    cliAvailable = j.cli;
+    j.sketches.forEach(s => sel.add(new Option(`소스: firmware/${s}/${s}.ino${j.cli ? '' : ' (arduino-cli 필요)'}`, 'sketch:' + s)));
+    const def = j.sketches.indexOf('esp32s3_barrier');
+    if (def >= 0) sel.selectedIndex = def;
+    if (!j.cli) slog('참고: arduino-cli가 없어 소스 컴파일은 불가합니다. setup_arduino.bat을 실행하거나 .bin 파일을 선택하세요.');
+  } catch {
+    slog('참고: 이 페이지에서는 소스 컴파일을 사용할 수 없어 미리 빌드된 펌웨어를 사용합니다. (소스 컴파일은 PC에서 start.bat으로 실행)');
+  }
+  // 미리 빌드된 펌웨어 (web/firmware/manifest.json) — 웹 배포본(GitHub Pages)에서도 사용 가능
+  try {
+    const r = await fetch('firmware/manifest.json', { cache: 'no-cache' });
+    if (!r.ok) throw new Error();
+    prebuilt = (await r.json()).firmware || [];
+    prebuilt.forEach(f => sel.add(new Option(`미리 빌드: ${f.label} (${(f.size / 1048576).toFixed(1)}MB)`, 'pre:' + f.file)));
+    if (!sel.value.startsWith('sketch:')) pickPrebuilt();
+  } catch {}
+  sel.add(new Option('직접 선택: 컴파일된 .bin 파일', 'bin'));
+  onSourceChange();
+}
+// 미리 빌드된 펌웨어 중 현재 USB 방식에 맞는 것을 선택
+let prebuilt = [];
+function pickPrebuilt() {
+  const sel = $('setSource');
+  if (sel.value.startsWith('sketch:') || sel.value === 'bin') return;
+  const f = prebuilt.find(x => x.usbMode === $('setUsbMode').value) || prebuilt[0];
+  if (f) sel.value = 'pre:' + f.file;
+}
+$('setUsbMode').onchange = pickPrebuilt;
+function onSourceChange() {
+  const isBin = $('setSource').value === 'bin';
+  $('setBinRow').style.display = isBin ? '' : 'none';
+  refreshButtons();
+}
+$('setSource').onchange = onSourceChange;
+$('setBin').onchange = () => {
+  const f = $('setBin').files[0];
+  if (f) $('setAddr').value = /merged|factory/i.test(f.name) ? '0x0' : '0x10000';
+  refreshButtons();
+};
+
+async function getImages() {
+  const src = $('setSource').value;
+  if (src === 'bin') {
+    const f = $('setBin').files[0];
+    if (!f) throw new Error('.bin 파일을 선택하세요.');
+    return [{ data: new Uint8Array(await f.arrayBuffer()), address: parseInt($('setAddr').value, 16) }];
+  }
+  if (src.startsWith('pre:')) {
+    const f = prebuilt.find(x => x.file === src.slice(4));
+    if (f.usbMode !== $('setUsbMode').value)
+      slog(`주의: 선택한 펌웨어는 ${f.usbMode === 'cdc' ? '네이티브 USB' : 'UART'}용인데 USB 방식은 다르게 설정되어 있습니다.`);
+    setProgress(-1, '펌웨어 내려받는 중…');
+    const r = await fetch('firmware/' + f.file, { cache: 'no-cache' });
+    if (!r.ok) throw new Error('펌웨어 파일을 내려받지 못했습니다: ' + f.file);
+    const data = new Uint8Array(await r.arrayBuffer());
+    if (data.length !== f.size) throw new Error('펌웨어 파일 크기가 맞지 않습니다. 새로고침 후 다시 시도하세요.');
+    slog(`펌웨어 준비: ${f.label}`);
+    return [{ data, address: f.address }];
+  }
+  if (!cliAvailable) throw new Error('arduino-cli가 없습니다. setup_arduino.bat을 실행한 뒤 start.bat을 다시 실행하세요.');
+  const sketch = src.slice(7);
+  slog(`컴파일 중: ${sketch} (USB 모드: ${$('setUsbMode').value}) … 처음에는 몇 분 걸릴 수 있습니다.`);
+  setProgress(-1, '컴파일 중…');
+  const r = await fetch('/api/compile', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sketch, usbMode: $('setUsbMode').value }) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || '컴파일 실패');
+  slog('컴파일 성공: ' + j.files.map(f => `${f.name}@0x${f.address.toString(16)}`).join(', '));
+  return j.files.map(f => ({ address: f.address,
+    data: Uint8Array.from(atob(f.b64), c => c.charCodeAt(0)) }));
+}
+
+function setProgress(ratio, label) {
+  const bar = $('setProg');
+  bar.style.width = ratio < 0 ? '100%' : (ratio * 100).toFixed(1) + '%';
+  bar.classList.toggle('indet', ratio < 0);
+  $('setProgTxt').textContent = label || '';
+}
+
+// 자주 나오는 오류를 이해하기 쉬운 안내로 바꿈
+function explainFlashError(msg) {
+  const m = String(msg);
+  if (/already open|Failed to open|access denied|NetworkError/i.test(m))
+    return '포트를 열 수 없습니다. Arduino IDE 시리얼 모니터, 다른 브라우저 탭(손가락 페이지 등)에서 이 포트를 쓰고 있지 않은지 확인하고, USB를 뽑았다 다시 꽂은 뒤 [USB 포트 선택]부터 다시 해 주세요.';
+  if (/Failed to connect|Timeout|timed out|wrong boot mode|Invalid head/i.test(m))
+    return '보드가 업로드 모드로 들어가지 않았습니다. BOOT 버튼을 누른 채 RST(EN)를 눌렀다 떼고, BOOT를 놓은 뒤 다시 업로드하세요. 그래도 안 되면 업로드 속도를 115200으로 낮춰 보세요.';
+  if (/device has been lost|disconnected|The device has been lost/i.test(m))
+    return '업로드 중 USB 연결이 끊겼습니다. 케이블(데이터용)과 USB 포트를 바꿔 보고, 업로드 속도를 115200으로 낮춰 보세요.';
+  if (/컴파일|arduino-cli/.test(m)) return '';
+  return '';
+}
+
+$('setFlash').onclick = async () => {
+  busy(true);
+  flashing = true;
+  try {
+    const images = await getImages();
+    if (checking) { slog('보드 확인 작업이 끝나기를 기다리는 중…'); await checking.catch(() => {}); }
+    await closeText();
+    const { ESPLoader, Transport } = await import(ESPTOOL_URL);
+    const transport = new Transport(usbPort, false);
+    const terminal = { clean() {}, writeLine: d => slog(String(d)), write: d => slog(String(d)) };
+    const baud = +$('setBaud').value;
+    slog(`업로드 시작: ${images.map(i => `${i.data.length.toLocaleString()} bytes @0x${i.address.toString(16)}`).join(', ')} / 속도 ${baud}`);
+    const loader = new ESPLoader({ transport, baudrate: baud, terminal });
+    setProgress(-1, '보드 연결 중… (안 되면 BOOT 버튼을 누른 채 RST를 눌러 주세요)');
+    const chip = await loader.main();
+    slog('칩 확인: ' + chip);
+    const total = images.reduce((s, i) => s + i.data.length, 0);
+    const done = new Array(images.length).fill(0);
+    await loader.writeFlash({
+      fileArray: images, flashMode: 'keep', flashFreq: 'keep', flashSize: 'keep',
+      eraseAll: false, compress: true,
+      reportProgress: (idx, written) => {
+        done[idx] = written;
+        const sum = done.reduce((a, b) => a + b, 0);
+        setProgress(sum / total, `업로드 ${(sum / total * 100).toFixed(0)}%`);
+      },
+    });
+    setProgress(1, '업로드 완료! 보드 재시작 중…');
+    await loader.after('hard_reset');
+    await transport.disconnect();
+    flashing = false;
+    slog('업로드 완료. 보드를 재시작합니다.');
+    await reacquirePort();
+  } catch (e) {
+    const msg = (e && (e.message || e.toString())) || String(e);
+    slog('업로드 실패: ' + msg);
+    const hint = explainFlashError(msg);
+    if (hint) slog('→ ' + hint);
+    setProgress(0, '실패 (아래 로그 참고)');
+    try { await usbPort.close(); } catch {}
+  }
+  flashing = false;
+  busy(false);
+};
+
+// 네이티브 USB는 재시작 시 포트가 다시 잡히므로, 이미 허용된 포트 목록에서 다시 찾음
+async function reacquirePort() {
+  for (let i = 0; i < 10; i++) {
+    await sleep(800);
+    const ports = await navigator.serial.getPorts();
+    const p = ports.find(x => {
+      const n = x.getInfo();
+      return n.usbVendorId === portInfo.usbVendorId && n.usbProductId === portInfo.usbProductId;
+    });
+    if (p) {
+      usbPort = p;
+      try { await sleep(1200); await checkBoard(); return; } catch {}
+    }
+  }
+  usbPort = null;
+  $('setPortInfo').textContent = '다시 선택 필요';
+  slog('보드 포트를 다시 찾지 못했습니다. [USB 포트 선택]을 다시 눌러 주세요.');
+}
+
+// ===================== ② Wi-Fi =====================
+$('setScan').onclick = async () => {
+  busy(true);
+  $('setNets').innerHTML = '<div class="muted" style="padding:8px">검색 중… (약 3~5초)</div>';
+  try {
+    const lines = await command('SCAN', l => l.startsWith('SCAN_END'), 20000);
+    const best = new Map();
+    lines.filter(l => l.startsWith('AP\t')).forEach(l => {
+      const [, rssi, lock, ...rest] = l.split('\t');
+      const ssid = rest.join('\t');
+      if (!best.has(ssid) || best.get(ssid).rssi < +rssi) best.set(ssid, { ssid, rssi: +rssi, lock: lock === '1' });
+    });
+    const nets = [...best.values()].sort((a, b) => b.rssi - a.rssi);
+    renderNets(nets);
+    slog(`Wi-Fi ${nets.length}개 검색됨`);
+  } catch (e) {
+    $('setNets').innerHTML = '';
+    slog('검색 실패: ' + e.message + ' (차단기 펌웨어가 업로드되어 있어야 합니다)');
+  }
+  busy(false);
+};
+
+function renderNets(nets) {
+  const box = $('setNets');
+  box.innerHTML = nets.length ? '' : '<div class="muted" style="padding:8px">검색된 2.4GHz Wi-Fi가 없습니다.</div>';
+  nets.forEach(n => {
+    const bars = n.rssi > -55 ? '▂▄▆█' : n.rssi > -67 ? '▂▄▆' : n.rssi > -78 ? '▂▄' : '▂';
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'net';
+    row.innerHTML = `<span class="sig">${bars}</span><span class="ssid"></span><span class="muted">${n.lock ? '🔒' : '공개'} ${n.rssi}dBm</span>`;
+    row.querySelector('.ssid').textContent = n.ssid;
+    row.onclick = () => {
+      box.querySelectorAll('.net').forEach(x => x.classList.remove('sel'));
+      row.classList.add('sel');
+      $('setSsid').value = n.ssid;
+      $('setPass').value = '';
+      if (n.lock) $('setPass').focus();
+      refreshButtons();
+    };
+    box.appendChild(row);
+  });
+}
+
+$('setSsid').oninput = refreshButtons;
+$('setJoin').onclick = async () => {
+  const ssid = $('setSsid').value, pass = $('setPass').value;
+  if (/[\t\n]/.test(ssid + pass)) return slog('SSID/비밀번호에 탭·줄바꿈 문자는 사용할 수 없습니다.');
+  busy(true);
+  $('setWifiState').textContent = `${ssid} 접속 중… (최대 15초)`;
+  try {
+    const lines = await command(`WIFI\t${ssid}\t${pass}`, l => /^WIFI_(OK|FAIL)/.test(l), 25000);
+    const res = lines.find(l => /^WIFI_(OK|FAIL)/.test(l));
+    if (res.startsWith('WIFI_OK')) {
+      const ip = res.split(',')[1];
+      $('setWifiState').textContent = `접속됨: ${ssid} (${ip}) — 보드에 저장되었습니다`;
+      showIp(ip);
+    } else {
+      $('setWifiState').textContent = '접속 실패: ' + res.split(',').slice(1).join(',');
+    }
+  } catch (e) { $('setWifiState').textContent = '접속 실패: ' + e.message; }
+  $('setPass').value = '';
+  busy(false);
+};
+
+$('setForget').onclick = async () => {
+  busy(true);
+  try { await command('FORGET', l => l === 'FORGET_OK', 3000); $('setWifiState').textContent = '저장된 Wi-Fi 없음'; }
+  catch (e) { slog('삭제 실패: ' + e.message); }
+  busy(false);
+};
+
+let lastIp = null;
+function showIp(ip) {
+  lastIp = ip;
+  $('setIp').textContent = ip;
+  $('setGo').style.display = '';
+}
+$('setGoBtn').onclick = async () => {
+  await closeText();   // USB 포트를 놓아줌 (Wi-Fi로만 제어)
+  dlg.close();
+  $('txtAddr').value = lastIp;
+  if ($('btnConn').textContent !== 'ESP32 연결') $('btnConn').click();   // 기존 연결 해제
+  $('btnConn').click();                                                  // 새 IP로 연결
+};
+
+// ===================== 공통 =====================
+function refreshButtons() {
+  const hasPort = !!usbPort;
+  $('setFlash').disabled = !hasPort || ($('setSource').value === 'bin' && !$('setBin').files[0]);
+  $('setScan').disabled = !hasPort;
+  $('setJoin').disabled = !hasPort || !$('setSsid').value;
+  $('setForget').disabled = !hasPort;
+}
+
+$('btnSettings').onclick = () => {
+  dlg.showModal();
+  if (location.protocol === 'file:' && !$('setFileNote')) {
+    const note = document.createElement('p');
+    note.id = 'setFileNote';
+    note.className = 'hint';
+    note.style.cssText = 'color:var(--warn);margin:12px 0 0';
+    note.textContent = '⚠ 파일을 직접 열었습니다. 소스(.ino) 컴파일은 start.bat으로 연 페이지(http://localhost:8000)에서만 됩니다. .bin 업로드와 Wi-Fi 설정은 사용할 수 있습니다.';
+    dlg.querySelector('.dbody').prepend(note);
+  }
+  if (!$('setSource').options.length) loadSketches();
+  refreshButtons();
+};
+$('setClose').onclick = async () => { await closeText(); dlg.close(); };
+$('setCopy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('setLog').textContent); $('setCopy').textContent = '복사됨 ✓'; }
+  catch { $('setCopy').textContent = '복사 실패'; }
+  setTimeout(() => { $('setCopy').textContent = '로그 복사'; }, 1500);
+};
+dlg.addEventListener('cancel', () => closeText());
+</script>
+</body>
+</html>

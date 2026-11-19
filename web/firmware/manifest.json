@@ -1,0 +1,20 @@
+{
+  "firmware": [
+    {
+      "file": "barrier-usb.bin",
+      "label": "차단기 (Wi-Fi) — 네이티브 USB 포트",
+      "usbMode": "cdc",
+      "address": 0,
+      "size": 1085440,
+      "sha256": "ea236089d431161352652607d9297af0440dc12df0c8287e0c69dad961b3fd1d"
+    },
+    {
+      "file": "barrier-uart.bin",
+      "label": "차단기 (Wi-Fi) — UART/COM 포트",
+      "usbMode": "uart",
+      "address": 0,
+      "size": 1069056,
+      "sha256": "02b06384c1a4d7cf0e1a27fb586d3e90cb4a800bd76460d8a77ebd56b049f386"
+    }
+  ]
+}
